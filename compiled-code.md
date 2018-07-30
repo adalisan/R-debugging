@@ -1,0 +1,114 @@
+
+# Debugging compiled code in R packages
+
+## Docs
+
+  - Section *Debugging compiled code* in *Writing R Extensions*:
+    <https://cran.r-project.org/doc/manuals/R-exts.html#Debugging-compiled-code>
+
+## Tools
+
+  - VirtualBox
+  - Free trial versions of Windows 2008, etc.
+    <https://www.microsoft.com/en-us/download/details.aspx?id=5023>
+  - Docker
+  - Winstons `r-debug` images: <https://github.com/wch/r-debug>
+  - Travis Docker images:
+    <https://docs.travis-ci.com/user/common-build-problems/#troubleshooting-locally-in-a-docker-image>
+  - Travis debug mode:
+    <https://docs.travis-ci.com/user/running-build-in-debug-mode/>
+  - R-hub docker images: <https://hub.docker.com/u/rhub/>
+  - Dr Memory: <http://www.drmemory.org/>
+  - Get a stack trace from Travis:
+    <https://github.com/r-lib/processx/blob/master/.travis.yml>
+  - Pretty-printer for R in GDB:
+    <https://github.com/lbartnik/rgdbprinter>
+  - rchk: find PROTECT errors: <https://github.com/kalibera/rchk> Or run
+    it on R-hub.
+
+## How-to
+
+### Run R in a debugger
+
+    R -d gdb
+    R -d lldb
+
+### Find memory errors on Linux
+
+    R -d valgrind
+    R -d valgrind --vanilla < mypkg-Ex.R
+    R -d "valgrind --tool=memcheck --leak-check=full" --vanilla < mypkg-Ex.R
+
+### Find memory errors on macOS
+
+    R -d valgrind
+    R -d valgrind --vanilla < mypkg-Ex.R
+    R -d "valgrind --tool=memcheck --leak-check=full" --vanilla < mypkg-Ex.R
+
+### Find memory errors on Windows
+
+Use Dr Memory, don’t forget to compile with `DEBUG=yes`.
+<http://www.drmemory.org/>
+
+### Debug tests within check
+
+  - Stop the test:
+    
+    ``` r
+    context("common")
+    
+    cat(Sys.getpid(), file = "/tmp/pid")
+    tools::pskill(Sys.getpid(), tools::SIGSTOP)
+    ...
+    ```
+
+  - Attach the debugger:
+    
+        lldb -p `cat /tmp/pid`
+
+  - Add a break point, if you want:
+    
+        b psll_parent
+
+  - Continue:
+    
+    ``` 
+    c
+    ```
+
+  - Will stop at break point, or after crash.
+
+### Find Resource Leaks
+
+  - Processes: `ps:::with_process_cleanup` (Maturing…)
+  - Open files: `showConnections()`, `ps::ps_open_files`
+
+### Get a stack trace from Travis
+
+    before_script:
+      - ulimit -c unlimited -S       # enable core dumps
+      - rm -rf /cores/core.*
+      - rm -rf ~/Library/Logs/DiagnosticReports/*
+    
+    after_failure:
+      - if [[ $TRAVIS_OS_NAME == 'osx' ]]; then
+          for c in $(ls /cores/core.*); do
+            lldb -c $c -o "bt all" -b;
+          done;
+          for c in $(ls ~/Library/Logs/DiagnosticReports); do
+            cat ~/Library/Logs/DiagnosticReports/$c;
+          done;
+        fi
+      - if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
+          for c in $(ls core*); do
+            gdb -c $c -ex bt -ex "set pagination 0" -batch;
+          done;
+        fi
+    
+    addons:
+      apt:
+        packages:
+        - gdb
+
+Output after crash will look like this:
+<https://travis-ci.org/r-lib/processx/jobs/406937156>
